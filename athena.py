@@ -1,6 +1,16 @@
 import speech_recognition as sr
 import requests
 import json
+from utility import (
+    tell_time,
+    monitor_backlight_on,
+    monitor_backlight_off,
+    monitor_backlight_color,
+    play_music,
+    pause_music,
+    music_next_track,
+    music_previous_track
+)
 
 # Initialize list of valid wake words
 WAKE_WORDS = [
@@ -11,7 +21,9 @@ WAKE_WORDS = [
 # Create a Recognizer instance to process audio
 recognizer = sr.Recognizer()
 
-# FUNCTIONS START -------------------------------------------------------------------------------------------------
+
+# ATHENA FUNCTIONS START -------------------------------------------------------------------------------------------------
+
 
 # Function to check if the spoken text contains a wake word
 def contains_wake_word(text):
@@ -39,33 +51,95 @@ def send_to_ollama(command):
 
     system_prompt = (
         """
-        You are Athena, a local voice assistant that interprets user commands and returns structured JSON instructions to trigger pre-defined Python functions.
+        You are Athena, a local desktop voice assistant. Your job is to interpret user commands and return JSON instructions to trigger specific Python functions.
 
-        Your job is to convert a natural language command into one of the following three actions:
-
-        1. "turn_on_lights" — turns on lights in a specific location
-        2. "turn_off_lights" — turns off lights in a specific location
-        3. "run_script" — runs a named script on the user's system
-
-        You must respond with ONLY a single JSON object in this format:
+        You ONLY respond with a single, valid, parseable JSON object in this format:
 
         {
-        "action": "<one_of_the_three_above_or_unclear_command>",
-        "params": {
-            // for "turn_on_lights" or "turn_off_lights": { "location": "<location>" }
-            // for "run_script": { "name": "<script_name>" }
-        }
+        "action": "<one of the actions listed below>",
+        "params": { ... }
         }
 
-        If the user command is vague, confusing, or does not clearly relate to one of the three supported actions, return:
+        OR If the user says something confusing, unsupported, or unrelated to the actions below, respond with:
 
         {
         "action": "unclear_command",
         "params": {}
         }
 
-        DO NOT include any explanation, apology, greeting, or extra text.  
-        Your entire response must be valid, parseable JSON."
+        ---
+
+        Here are the supoported actions and their schemas.
+        
+        SUPPORTED ACTIONS:
+
+        1. "tell_time" — Tells the current time
+        - Example:
+            {
+            "action": "tell_time",
+            "params": {}
+            }
+
+        2. "monitor_backlight_on" — Turns on the Philips Hue monitor backlight
+        - Example:
+            {
+            "action": "monitor_backlight_on",
+            "params": {}
+            }
+
+        3. "monitor_backlight_off" — Turns off the Philips Hue monitor backlight
+        - Example:
+            {
+            "action": "monitor_backlight_off",
+            "params": {}
+            }
+
+        4. "monitor_backlight_color" — Sets the monitor backlight to a specific color
+        - Accepted colors: red, green, blue, light blue, cyan, purple, white, warm white, orange, yellow, pink
+        - Example:
+            {
+            "action": "monitor_backlight_color",
+            "params": {
+                "color_name": "blue"
+            }
+            }
+
+        5. "play_music" — Toggles music playback (play/pause)
+        - Example:
+            {
+            "action": "play_music",
+            "params": {}
+            }
+
+        6. "pause_music" — Toggles music playback (play/pause)
+        - Example:
+            {
+            "action": "pause_music",
+            "params": {}
+            }
+
+        7. "music_next_track" — Skips to the next music track
+        - Example:
+            {
+            "action": "music_next_track",
+            "params": {}
+            }
+
+        8. "music_previous_track" — Returns to the previous music track
+        - Example:
+            {
+            "action": "music_previous_track",
+            "params": {}
+            }
+
+        ---
+
+        💡 INSTRUCTIONS:
+
+        - NEVER include explanations, greetings, or extra text.
+        - ONLY return the JSON.
+        - Always match the action name and parameter structure exactly.
+        - Do NOT return actions not listed above.
         """)
 
 
@@ -100,24 +174,18 @@ def send_to_ollama(command):
         print("Error talking to Ollama:", e)
 
 
-def turn_on_lights(location=None):
-    print(f"Lights turned ON at location: {location}")
+# ATHENA FUNCTIONS END --------------------------------------------------------------------------------------------------
 
-def turn_off_lights(location=None):
-    print(f"Lights turned OFF at location: {location}")
-
-def run_script(name=None):
-    print(f"Running script: {name}")
-
-# Map action names to functions
 intent_map = {
-    "turn_on_lights": turn_on_lights,
-    "turn_off_lights": turn_off_lights,
-    "run_script": run_script
+    "tell_time": tell_time,
+    "monitor_backlight_on": monitor_backlight_on,
+    "monitor_backlight_off": monitor_backlight_off,
+    "monitor_backlight_color": monitor_backlight_color,
+    "play_music": play_music,
+    "pause_music": pause_music,
+    "music_next_track": music_next_track,
+    "music_previous_track": music_previous_track
 }
-
-
-# FUNCTIONS END --------------------------------------------------------------------------------------------------
 
 # Main loop: listen continuously for wake words
 with sr.Microphone() as source:
@@ -149,3 +217,4 @@ with sr.Microphone() as source:
         except sr.RequestError as e:
             # Something went wrong when trying to reach Google's API
             print(f"Could not reach Google: {e}")
+
