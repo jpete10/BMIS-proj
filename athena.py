@@ -11,6 +11,43 @@ from utility import (
     music_next_track,
     music_previous_track
 )
+import pyttsx3
+import time
+import threading
+import queue
+import traceback
+
+# Initialize TTS engine
+engine = pyttsx3.init()
+tts_lock = threading.Lock()
+voices = engine.getProperty('voices')
+engine.setProperty('voice', voices[1].id)  # Zira
+engine.setProperty('rate', 180)
+
+# Create a thread-safe queue
+tts_queue = queue.Queue()
+
+# Background worker thread
+def tts_worker():
+    while True:
+        text = tts_queue.get()
+        if text is None:
+            break
+        with tts_lock:
+            try:
+                engine.say(text)
+                engine.runAndWait()
+            except Exception as e:
+                print("[TTS ERROR]", e)
+        tts_queue.task_done()
+
+# Start the TTS thread
+tts_thread = threading.Thread(target=tts_worker, daemon=True)
+tts_thread.start()
+
+def say(text):
+    print(f"[DEBUG] Queuing TTS: {text}")
+    tts_queue.put(text)
 
 # Initialize list of valid wake words
 WAKE_WORDS = [
@@ -22,7 +59,12 @@ WAKE_WORDS = [
 recognizer = sr.Recognizer()
 
 
+
+
+
+
 # ATHENA FUNCTIONS START -------------------------------------------------------------------------------------------------
+
 
 
 # Function to check if the spoken text contains a wake word
@@ -163,7 +205,9 @@ def send_to_ollama(command):
 
                 if action in intent_map:
                     print(f"Executing: {action} with params: {params}")
-                    intent_map[action](**params)
+                    voice_response = get_voice_response(command, action)
+                    handle_action_with_voice(action, params, voice_response or "")
+
                 else:
                     print(f"Unknown action: {action}")
             except json.JSONDecodeError:
@@ -173,8 +217,84 @@ def send_to_ollama(command):
     except Exception as e:
         print("Error talking to Ollama:", e)
 
+# Function to get a spoken responce from Athena
+def get_voice_response(command_text, action_name):
+    system_prompt = f"""
+    You are Athena, a warm and professional voice assistant. 
+    A user has just said: "{command_text}"
+
+    Your task is to generate a short, natural spoken response for this action: {action_name}
+
+    Respond in 1 sentence or less, friendly and clear.
+
+    DO NOT repeat the user's command. DO NOT mention your name. 
+    Just say what you're doing in a natural way.
+    Example: "Turning off the monitor backlight now."
+
+    Your response should be strictly text with no code or quotation marks.
+    """
+
+    payload = {
+        "model": "mistral",
+        "prompt": system_prompt,
+        "stream": False
+    }
+
+    try:
+        response = requests.post("http://localhost:11434/api/generate", json=payload)
+        if response.status_code == 200:
+            return response.json()["response"].strip()
+        else:
+            return None
+    except Exception as e:
+        print(f"Error getting voice response: {e}")
+        return None
+
+# Function that runs the function/speaks with the correct timing
+def handle_action_with_voice(action, params, voice_text):
+    func = intent_map.get(action)
+    timing = timing_map.get(action, "speak_then_act")  # default if not listed
+
+    if not func:
+        print(f"Unknown action: {action}")
+        return
+
+    if timing == "speak_then_act":
+        say(voice_text)
+        time.sleep(1.2)
+        func(**params)
+
+    elif timing == "act_then_speak":
+        func(**params)
+        time.sleep(0.6)
+        say(voice_text)
+
+    elif timing == "parallel":
+        say(voice_text)
+        func(**params)
+
+    else:
+        # fallback to speak then act
+        say(voice_text)
+        func(**params)
+
+
+
 
 # ATHENA FUNCTIONS END --------------------------------------------------------------------------------------------------
+
+
+
+timing_map = {
+    "play_music": "speak_then_act",
+    "pause_music": "act_then_speak",
+    "monitor_backlight_color": "parallel",
+    "monitor_backlight_on": "parallel",
+    "monitor_backlight_off": "parallel",
+    "music_next_track": "parallel",
+    "music_previous_track": "parallel",
+    "tell_time": "act_then_speak"
+}
 
 intent_map = {
     "tell_time": tell_time,
